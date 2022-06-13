@@ -31,7 +31,7 @@ import logging
 
 from flask import Flask  # noqa: E402
 
-from .config import configure_app  # pylint: disable-msg=C0413
+from fidosigs.config import configure_app  # pylint: disable-msg=C0413
 
 __version__ = '0.0.1'
 # Load the application

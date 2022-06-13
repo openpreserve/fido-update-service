@@ -27,7 +27,7 @@ import importlib_resources
 from flask import render_template, send_from_directory
 from werkzeug.exceptions import BadRequest, Forbidden, NotFound, InternalServerError
 
-from fido.signatures.webapp import APP
+from fidosigs.app import APP
 
 ROUTES = True
 
@@ -67,6 +67,7 @@ def latest_ver():
 def version_details(version):
     """Return a list of the available services as XML."""
     ver_dir = _get_sig_dir(version)
+    logging.debug('Version {} dir is {}'.format(version, ver_dir))
     if ver_dir is None:
         return {'message': 'No sig files found for version {}'.format(version)}, 404
     version_xml = Element('signature', version=version)
@@ -84,19 +85,29 @@ def version_collatoral(version, action):
         for sigdir in _get_sig_dirs():
             version = _latest(version, sigdir)
     ver_dir = _get_sig_dir(version)
+    if ver_dir is None:
+        return {'message': 'No resources found for version {}, action {}'.format(version, action)}, 404
+    logging.debug('Version {} dir is {} for action {}'.format(version, ver_dir, action))
     if action.lower() == 'droid':
-        return send_from_directory(ver_dir, 'DROID_SignatureFile-{}.xml'.format(version))
+        logging.debug("Sending DROID")
+        return send_from_directory(ver_dir, 'DROID_SignatureFile-v{}.xml'.format(version))
     if action.lower() == 'pronom':
-        return send_from_directory(ver_dir, 'pronom-xml-{}.zip'.format(version))
+        logging.debug("Sending PRONOM")
+        return send_from_directory(ver_dir, 'pronom-xml-v{}.zip'.format(version))
     if action.lower() == 'fido':
-        return send_from_directory(ver_dir, 'formats-{}.xml'.format(version))
+        logging.debug("Sending FIDO")
+        return send_from_directory(ver_dir, 'formats-v{}.xml'.format(version))
     return {'message': 'No resources found for version {}, action {}'.format(version, action)}, 404
 
 
 def _latest(latest, to_compare):
+    if not latest:
+        return to_compare
+    if not to_compare:
+        return latest
     lat_ver = _remove_prefix(latest, 'v')
     comp_ver = _remove_prefix(to_compare, 'v')
-    return latest if lat_ver > comp_ver else to_compare
+    return latest if int(lat_ver) > int(comp_ver) else to_compare
 
 
 def _remove_prefix(text, prefix):
@@ -107,7 +118,7 @@ def _remove_prefix(text, prefix):
 
 def _get_sig_dirs():
     dirs = []
-    root = str(importlib_resources.files('fido.signatures.resources').joinpath('format'))
+    root = str(importlib_resources.files('fidosigs.resources').joinpath('format'))
     for _, subdirs, _ in os.walk(root):
         for subdir in subdirs:
             if str(subdir).startswith('v'):
@@ -116,7 +127,9 @@ def _get_sig_dirs():
 
 
 def _get_sig_dir(version):
-    root = str(importlib_resources.files('fido.signatures.resources').joinpath('format'))
+    if not version.startswith('v'):
+        version = 'v' + version
+    root = str(importlib_resources.files('fidosigs.resources').joinpath('format'))
     for _, subdirs, _ in os.walk(root):
         for subdir in subdirs:
             if str(subdir) == version:
@@ -131,46 +144,6 @@ def containers():
     SubElement(services_xml, 'signature', url='signature')
     SubElement(services_xml, 'container', url='container')
     return tostring(services_xml)
-
-
-@APP.errorhandler(BadRequest)
-def bad_request_handler(bad_request):
-    """Basic bad request handler."""
-    return render_template('except.html',
-                           http_excep=bad_request,
-                           message='bad request {}'.format(str(bad_request)),
-                           http_code=403,
-                           http_error="Bad Request")
-
-
-@APP.errorhandler(NotFound)
-def not_found_handler(not_found):
-    """Basic not found request handler."""
-    return render_template('except.html',
-                           http_excep=not_found,
-                           message='Not resource found at this URL.',
-                           http_code=404,
-                           http_error="Not Found")
-
-
-@APP.errorhandler(Forbidden)
-def forbidden_handler(forbidden):
-    """Basic not found request handler."""
-    return render_template('except.html',
-                           http_excep=forbidden,
-                           message='You\'re forbidden to access this resource.',
-                           http_code=403,
-                           http_error="Forbidden")
-
-
-@APP.errorhandler(InternalServerError)
-def servererr_handler(servererr):
-    """Basic not found request handler."""
-    return render_template('except.html',
-                           http_excep=servererr,
-                           message='Something\'s gone wrong with the application',
-                           http_code=500,
-                           http_error="Internal Server Error")
 
 
 @APP.teardown_appcontext

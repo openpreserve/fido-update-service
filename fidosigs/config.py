@@ -22,8 +22,7 @@ Configuration for FIDO signature Flask app.
 import os.path
 import tempfile
 
-from flask_debugtoolbar import DebugToolbarExtension
-from .const import ENV_CONF_PROFILE, ENV_CONF_FILE
+from fidosigs.const import ENV_CONF_PROFILE, ENV_CONF_FILE
 
 HOST = 'localhost'
 
@@ -38,8 +37,8 @@ class BaseConfig():  # pylint: disable-msg=R0903
 
     NAME = 'Default'
     HOST = HOST
-    DEBUG = False
-    TESTING = False
+    DEBUG = True
+    TESTING = True
     LOG_FORMAT = '[%(filename)-15s:%(lineno)-5d] %(message)s'
     LOG_FILE = os.path.join(LOG_ROOT, 'fido-signatures.log')
     SECRET_KEY = 'a5c020ced05af9ad3189304a41beb5c7b6f750b846dadad'
@@ -62,9 +61,9 @@ class TestConfig(BaseConfig):  # pylint: disable-msg=R0903
 
 
 CONFIGS = {
-    "dev": 'fido.signatures.config.DevConfig',
-    "default": 'fido.signatures.config.BaseConfig',
-    "test": 'fido.signatures.config.TestConfig'
+    "dev": 'fidosigs.config.DevConfig',
+    "default": 'fidosigs.config.BaseConfig',
+    "test": 'fidosigs.config.TestConfig'
 }
 
 
@@ -76,4 +75,3 @@ def configure_app(app, profile_name='dev'):
         app.config.from_envvar(ENV_CONF_FILE)
     if not os.path.exists(UPLOADS_TEMP):
         os.makedirs(UPLOADS_TEMP)
-    DebugToolbarExtension(app)
