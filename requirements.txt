@@ -1,0 +1,4 @@
+setuptools
+fastapi>=0.78.0.<0.79.0
+importlib_resources
+uvicorn>=0.17.0,<0.18.0
