@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-FIDO: Format Identifier for Digital Objects.
+FIDO Signature service.
 
-Copyright 2010 The Open Preservation Foundation
+Copyright 2022 The Open Preservation Foundation
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,103 +17,137 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
-Flask application routes for E-ARK Python IP Validator.
+FastAPI application routes for the FIDO sig service.
 """
 import logging
 import os
 from xml.etree.ElementTree import Element, SubElement, tostring
 import importlib_resources
 
-from flask import render_template, send_from_directory
-from werkzeug.exceptions import BadRequest, Forbidden, NotFound, InternalServerError
+from fastapi import FastAPI, HTTPException, Response
+from fastapi.responses import FileResponse, PlainTextResponse 
 
-from fidosigs.app import APP
-
-ROUTES = True
+APP = FastAPI()
 
 XML_MIME = 'text/xml'
 XML_APP_MIME = 'application/xml'
 
+class XMLResponse(Response):
+    media_type = XML_APP_MIME
 
-@APP.route("/")
-def services():
+@APP.get(
+    "/",
+    response_class=XMLResponse
+)
+def root() -> XMLResponse:
     """Return a list of the available services as XML."""
     services_xml = Element('services')
     SubElement(services_xml, 'format', url='format')
     SubElement(services_xml, 'container', url='container')
-    return tostring(services_xml)
+    return tostring(services_xml, encoding='utf8', method='xml')
 
-
-@APP.route("/format/")
-def formats():
-    """Return a list of the available services as XML."""
+@APP.get(
+    "/format",
+    response_class=XMLResponse
+)
+def formats() -> XMLResponse:
+    """Return a list of the available format signature files as XML."""
     format_xml = Element('format')
     sigs = SubElement(format_xml, 'signatures')
     for sigdir in _get_sig_dirs():
         SubElement(sigs, 'signature', version=sigdir)
-    return tostring(format_xml)
+    return tostring(format_xml, encoding='utf8', method='xml')
 
 
-@APP.route("/format/latest/")
-def latest_ver():
-    """Return the latest sig file version number."""
+@APP.get(
+    "/format/latest",
+    response_class=PlainTextResponse
+)
+def latest_ver() -> str:
+    """Return the latest available format signature file version number as plain text."""
     latest = ''
     for sigdir in _get_sig_dirs():
         latest = _latest(latest, sigdir)
-    return tostring(Element('signature', version=latest))
+    return latest
 
 
-@APP.route("/format/<string:version>/")
-def version_details(version):
-    """Return a list of the available services as XML."""
+@APP.get(
+    "/format/{version}",
+    response_class=XMLResponse
+)
+def version_details(version) -> XMLResponse:
+    """List the file resources available for a particualr version as XML."""
     ver_dir = _get_sig_dir(version)
     logging.debug('Version {} dir is {}'.format(version, ver_dir))
     if ver_dir is None:
-        return {'message': 'No sig files found for version {}'.format(version)}, 404
+        raise HTTPException (status_code=404, detail='No sig files found for version {}'.format(version))
     version_xml = Element('signature', version=version)
     SubElement(version_xml, 'droid', url='DROID_SignatureFile-{}.xml'.format(version))
     SubElement(version_xml, 'formats', url='formats-{}.xml'.format(version))
     SubElement(version_xml, 'pronom', url='pronom-xml-{}.zip'.format(version))
-    return tostring(version_xml)
+    return tostring(version_xml, encoding='utf8', method='xml')
 
 
-@APP.route("/format/<string:version>/<string:action>/")
-def version_collatoral(version, action):
-    """Return the appropriate resource file."""
+@APP.get(
+    "/format/{version}/{action}",
+    response_class=FileResponse
+)
+def version_collatoral(version, action) -> FileResponse:
+    """Return the appropriate resource file for version parameter, or latest for latest.
+       Action can be one of fido | droid | pronom.
+    """
     if version.lower() == 'latest':
         version = ''
         for sigdir in _get_sig_dirs():
             version = _latest(version, sigdir)
     ver_dir = _get_sig_dir(version)
-    if ver_dir is None:
-        return {'message': 'No resources found for version {}, action {}'.format(version, action)}, 404
+    if ver_dir is None or action.lower() not in ['droid', 'pronom', 'fido']:
+        message = 'No resources found for version {}, action {}'.format(version, action)
+        logging.info(message)
+        raise HTTPException (status_code=404, detail=message)
     logging.debug('Version {} dir is {} for action {}'.format(version, ver_dir, action))
+    filename = 'formats-v{}.xml'.format(version)
     if action.lower() == 'droid':
         logging.debug("Sending DROID")
-        return send_from_directory(ver_dir, 'DROID_SignatureFile-v{}.xml'.format(version))
-    if action.lower() == 'pronom':
+        filename = 'DROID_SignatureFile-v{}.xml'.format(version)
+    elif action.lower() == 'pronom':
         logging.debug("Sending PRONOM")
-        return send_from_directory(ver_dir, 'pronom-xml-v{}.zip'.format(version))
-    if action.lower() == 'fido':
+        filename = 'pronom-xml-v{}.zip'.format(version)
+    else:
         logging.debug("Sending FIDO")
-        return send_from_directory(ver_dir, 'formats-v{}.xml'.format(version))
-    return {'message': 'No resources found for version {}, action {}'.format(version, action)}, 404
+    return FileResponse(os.path.join(ver_dir, filename), filename=filename)
 
 
-def _latest(latest, to_compare):
+@APP.get(
+    "/container/",
+    responses={
+      200: {
+          "content": {XML_APP_MIME: {}},
+      }
+    },
+)
+def containers() -> XMLResponse:
+    """Return a list of the available services as XML."""
+    services_xml = Element('services')
+    SubElement(services_xml, 'signature', url='signature')
+    SubElement(services_xml, 'container', url='container')
+    return tostring(services_xml, encoding='utf8', method='xml')
+
+
+def _latest(latest: str, to_compare: str) -> str:
+    """Return the most recent version number of latest and to_compare."""
     if not latest:
         return to_compare
     if not to_compare:
         return latest
-    lat_ver = _remove_prefix(latest, 'v')
-    comp_ver = _remove_prefix(to_compare, 'v')
+    lat_ver = _remove_prefix(latest)
+    comp_ver = _remove_prefix(to_compare)
     return latest if int(lat_ver) > int(comp_ver) else to_compare
 
 
-def _remove_prefix(text, prefix):
-    if text.startswith(prefix):
-        return text[len(prefix):]
-    return text
+def _remove_prefix(text: str, prefix: str='v') -> str:
+    """Return the value text with a single prefix character removed if present."""
+    return text[len(prefix):] if text.startswith(prefix) else text
 
 
 def _get_sig_dirs():
@@ -126,7 +160,7 @@ def _get_sig_dirs():
     return dirs
 
 
-def _get_sig_dir(version):
+def _get_sig_dir(version: str):
     if not version.startswith('v'):
         version = 'v' + version
     root = str(importlib_resources.files('fidosigs.resources').joinpath('format'))
@@ -135,22 +169,6 @@ def _get_sig_dir(version):
             if str(subdir) == version:
                 return os.path.join(root, subdir)
     return None
-
-
-@APP.route("/containers/")
-def containers():
-    """Return a list of the available services as XML."""
-    services_xml = Element('services')
-    SubElement(services_xml, 'signature', url='signature')
-    SubElement(services_xml, 'container', url='container')
-    return tostring(services_xml)
-
-
-@APP.teardown_appcontext
-def shutdown_session(exception=None):
-    """Tear down the database session."""
-    if exception:
-        logging.warning("Shutting down database session with exception.")
 
 
 if __name__ == "__main__":
