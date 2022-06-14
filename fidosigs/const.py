@@ -20,8 +20,6 @@ limitations under the License.
 Constants used across FIDO sigs app
 """
 
-ENV_CONF_PROFILE = 'FIDO_SIGS_CONF_PROFILE'
-ENV_CONF_FILE = 'FIDO_SIGS_CONF_FILE'
 EPILOG = """
 Open Preservation Foundation (http://www.openpreservation.org)
 See LICENSE for license information."""
