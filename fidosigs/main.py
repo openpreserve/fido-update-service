@@ -61,14 +61,15 @@ def formats() -> XMLResponse:
 
 @APP.get(
     "/format/latest",
-    response_class=PlainTextResponse
+    response_class=XMLResponse
 )
-def latest_ver() -> str:
-    """Return the latest available format signature file version number as plain text."""
+def latest_ver() -> XMLResponse:
+    """Return the latest available format signature file version number as XML."""
     latest = ''
     for sigdir in _get_sig_dirs():
         latest = _latest(latest, sigdir)
-    return latest
+    format_xml = Element('signature', version=latest)
+    return tostring(format_xml, encoding='utf8', method='xml')
 
 
 @APP.get(
